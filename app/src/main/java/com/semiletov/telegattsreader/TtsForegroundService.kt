@@ -62,33 +62,47 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
     private suspend fun checkAndReadChannels() {
         val channels: MutableList<Channel> = ChannelStorage.loadChannels(applicationContext)
+        var updated = false
 
         for (ch in channels) {
             if (ch.isEnabled) {
                 val posts = TelegramParser.getLatestPosts(ch.url)
-                val newPosts = if (ch.lastPostId.isEmpty()) {
-                    posts.take(1)
-                } else {
-                    posts.filter { it.id > ch.lastPostId }
-                }
-                for (p in newPosts) {
-                    val channelPrefix = if (p.channelName.isNotBlank()) "Канал ${p.channelName}" else ""
-                    val timePrefix = if (p.time.isNotBlank()) " в ${p.time}" else ""
-                    val header = buildString {
-                        if (channelPrefix.isNotBlank()) append(channelPrefix)
-                        if (timePrefix.isNotBlank()) append(timePrefix)
-                    }
-                    val textToRead = if (header.isNotBlank()) "$header. ${p.text}" else p.text
-                    speakText(textToRead)
-                }
                 if (posts.isNotEmpty()) {
-                    val lastPost = posts.last()
-                    ch.lastPostId = lastPost.id
+                    if (ch.lastPostId.isEmpty()) {
+                        // Если канал только что добавлен, запоминаем последний текущий пост,
+                        // но НЕ озвучиваем старые сообщения. Ждем только новые посты.
+                        ch.lastPostId = posts.last().id
+                        updated = true
+                    } else {
+                        val lastIdNum = ch.lastPostId.toLongOrNull() ?: 0L
+                        val newPosts = posts.filter { post ->
+                            val postIdNum = post.id.toLongOrNull() ?: 0L
+                            postIdNum > lastIdNum
+                        }
+
+                        for (p in newPosts) {
+                            val channelPrefix = if (p.channelName.isNotBlank()) "Канал ${p.channelName}" else ""
+                            val timePrefix = if (p.time.isNotBlank()) " в ${p.time}" else ""
+                            val header = buildString {
+                                if (channelPrefix.isNotBlank()) append(channelPrefix)
+                                if (timePrefix.isNotBlank()) append(timePrefix)
+                            }
+                            val textToRead = if (header.isNotBlank()) "$header. ${p.text}" else p.text
+                            speakText(textToRead)
+                        }
+
+                        if (newPosts.isNotEmpty()) {
+                            ch.lastPostId = newPosts.last().id
+                            updated = true
+                        }
+                    }
                 }
             }
         }
 
-        ChannelStorage.saveChannels(applicationContext, channels)
+        if (updated) {
+            ChannelStorage.saveChannels(applicationContext, channels)
+        }
     }
 
     private fun speakText(text: String) {
