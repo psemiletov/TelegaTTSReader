@@ -7,7 +7,9 @@ import org.jsoup.nodes.Document
 
 data class TelegramPost(
     val id: String,
-    val text: String
+    val text: String,
+    val time: String = "",
+    val channelName: String = ""
 )
 
 object TelegramParser {
@@ -28,6 +30,11 @@ object TelegramParser {
                 .timeout(10000)
                 .get()
 
+            val channelTitle = doc.selectFirst(".tgme_channel_info_header_title")?.text()
+                ?: doc.selectFirst(".tgme_channel_info_title")?.text()
+                ?: doc.selectFirst(".tgme_page_title")?.text()
+                ?: cleanUrl
+
             val postElements = doc.select(".tgme_widget_message")
             for (element in postElements) {
                 val dataPost = element.attr("data-post") // формат: "channel_name/123"
@@ -36,8 +43,12 @@ object TelegramParser {
                 val textElement = element.selectFirst(".tgme_widget_message_text")
                 val text = textElement?.text() ?: ""
 
+                val timeElement = element.selectFirst(".tgme_widget_message_date time")
+                    ?: element.selectFirst(".tgme_widget_message_date")
+                val time = timeElement?.text() ?: ""
+
                 if (postId.isNotEmpty() && text.isNotEmpty()) {
-                    posts.add(TelegramPost(id = postId, text = text))
+                    posts.add(TelegramPost(id = postId, text = text, time = time, channelName = channelTitle))
                 }
             }
         } catch (e: Exception) {

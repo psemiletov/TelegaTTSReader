@@ -72,7 +72,13 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                     posts.filter { it.id > ch.lastPostId }
                 }
                 for (p in newPosts) {
-                    val textToRead = p.text
+                    val channelPrefix = if (p.channelName.isNotBlank()) "Канал ${p.channelName}" else ""
+                    val timePrefix = if (p.time.isNotBlank()) " в ${p.time}" else ""
+                    val header = buildString {
+                        if (channelPrefix.isNotBlank()) append(channelPrefix)
+                        if (timePrefix.isNotBlank()) append(timePrefix)
+                    }
+                    val textToRead = if (header.isNotBlank()) "$header. ${p.text}" else p.text
                     speakText(textToRead)
                 }
                 if (posts.isNotEmpty()) {
