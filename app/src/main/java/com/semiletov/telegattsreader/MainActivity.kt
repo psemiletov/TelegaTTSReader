@@ -1,0 +1,166 @@
+package com.semiletov.telegattsreader
+
+import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+
+class MainActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    MainScreen(
+                        onStartService = { startTtsService() },
+                        onStopService = { stopTtsService() }
+                    )
+                }
+            }
+        }
+    }
+
+    private fun startTtsService() {
+        val intent = Intent(this, TtsForegroundService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
+    }
+
+    private fun stopTtsService() {
+        val intent = Intent(this, TtsForegroundService::class.java)
+        stopService(intent)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val channels = remember { mutableStateListOf<Channel>().apply { addAll(ChannelStorage.loadChannels(context)) } }
+    var newUrl by remember { mutableStateOf("") }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Telega TTS Reader") }) }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .padding(16.dp)
+                .fillMaxSize()
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = newUrl,
+                    onValueChange = { newUrl = it },
+                    label = { Text("URL или @имя_канала") },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Button(onClick = {
+                    if (newUrl.isNotBlank()) {
+                        val ch = Channel(url = newUrl.trim())
+                        channels.add(ch)
+                        ChannelStorage.saveChannels(context, channels)
+                        newUrl = ""
+                    }
+                }) {
+                    Text("Добавить")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Button(onClick = onStartService) {
+                    Text("Запустить службу")
+                }
+                OutlinedButton(onClick = onStopService) {
+                    Text("Остановить")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                items(channels, key = { it.id }) { channel ->
+                    ChannelItem(
+                        channel = channel,
+                        onToggle = { isChecked ->
+                            channel.isEnabled = isChecked
+                            ChannelStorage.saveChannels(context, channels)
+                        },
+                        onDelete = {
+                            channels.remove(channel)
+                            ChannelStorage.saveChannels(context, channels)
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ChannelItem(channel: Channel, onToggle: (Boolean) -> Unit, onDelete: () -> Unit) {
+    var checked by remember { mutableStateOf(channel.isEnabled) }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(text = channel.url, style = MaterialTheme.typography.bodyLarge)
+                if (channel.lastPostId.isNotEmpty()) {
+                    Text(
+                        text = "Последний ID: ${channel.lastPostId}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            Switch(
+                checked = checked,
+                onCheckedChange = {
+                    checked = it
+                    onToggle(it)
+                }
+            )
+            IconButton(onClick = onDelete) {
+                Text("❌")
+            }
+        }
+    }
+}
