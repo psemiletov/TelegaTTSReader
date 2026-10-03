@@ -18,6 +18,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
@@ -68,33 +70,24 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             if (ch.isEnabled) {
                 val posts = TelegramParser.getLatestPosts(ch.url)
                 if (posts.isNotEmpty()) {
-                    if (ch.lastPostId.isEmpty()) {
-                        // Если канал только что добавлен, запоминаем последний текущий пост,
+                    val latestPost = posts.last()
+
+                    if (ch.lastPostText.isEmpty()) {
+                        // Первый запуск/добавление канала: запоминаем текст текущего последнего сообщения,
                         // но НЕ озвучиваем старые сообщения. Ждем только новые посты.
-                        ch.lastPostId = posts.last().id
+                        ch.lastPostText = latestPost.text
                         updated = true
-                    } else {
-                        val lastIdNum = ch.lastPostId.toLongOrNull() ?: 0L
-                        val newPosts = posts.filter { post ->
-                            val postIdNum = post.id.toLongOrNull() ?: 0L
-                            postIdNum > lastIdNum
-                        }
+                    } else if (latestPost.text != ch.lastPostText) {
+                        // Появилось новое сообщение, текст которого отличается от старого сохраненного
+                        ch.lastPostText = latestPost.text
+                        updated = true
 
-                        for (p in newPosts) {
-                            val channelPrefix = if (p.channelName.isNotBlank()) "Канал ${p.channelName}" else ""
-                            val timePrefix = if (p.time.isNotBlank()) " в ${p.time}" else ""
-                            val header = buildString {
-                                if (channelPrefix.isNotBlank()) append(channelPrefix)
-                                if (timePrefix.isNotBlank()) append(timePrefix)
-                            }
-                            val textToRead = if (header.isNotBlank()) "$header. ${p.text}" else p.text
-                            speakText(textToRead)
-                        }
+                        // Получаем текущее время на смартфоне
+                        val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                        val channelName = latestPost.channelName.ifBlank { ch.url }
 
-                        if (newPosts.isNotEmpty()) {
-                            ch.lastPostId = newPosts.last().id
-                            updated = true
-                        }
+                        val textToRead = "Канал $channelName, в $currentTime. ${latestPost.text}"
+                        speakText(textToRead)
                     }
                 }
             }

@@ -9,7 +9,8 @@ data class Channel(
     val id: String = java.util.UUID.randomUUID().toString(),
     var url: String = "",
     var isEnabled: Boolean = true,
-    var lastPostId: String = ""
+    var lastPostId: String = "",
+    var lastPostText: String = ""
 )
 
 object ChannelStorage {
@@ -24,6 +25,7 @@ object ChannelStorage {
                 put("url", channel.url)
                 put("isEnabled", channel.isEnabled)
                 put("lastPostId", channel.lastPostId)
+                put("lastPostText", channel.lastPostText)
             }
             jsonArray.put(obj)
         }
@@ -44,7 +46,8 @@ object ChannelStorage {
                         id = obj.optString("id", java.util.UUID.randomUUID().toString()),
                         url = obj.optString("url", ""),
                         isEnabled = obj.optBoolean("isEnabled", true),
-                        lastPostId = obj.optString("lastPostId", "")
+                        lastPostId = obj.optString("lastPostId", ""),
+                        lastPostText = obj.optString("lastPostText", "")
                     )
                 )
             }
