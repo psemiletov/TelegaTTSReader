@@ -4,11 +4,16 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -29,14 +34,32 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private var searchJob: Job? = null
 
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    private var focusRequest: AudioFocusRequest? = null
+
     override fun onCreate() {
         super.onCreate()
         tts = TextToSpeech(this, this).apply {
-            val audioAttributes = android.media.AudioAttributes.Builder()
-                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
-                .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+            val attr = AudioAttributes.Builder()
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
                 .build()
-            setAudioAttributes(audioAttributes)
+            setAudioAttributes(attr)
+
+            setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    requestAudioFocus()
+                }
+
+                override fun onDone(utteranceId: String?) {
+                    abandonAudioFocus()
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    abandonAudioFocus()
+                }
+            })
         }
         createNotificationChannel()
 
@@ -50,6 +73,27 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             )
         } else {
             startForeground(1, notification)
+        }
+    }
+
+    private fun requestAudioFocus() {
+        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setAcceptsDelayedFocusGain(false)
+            .setOnAudioFocusChangeListener {}
+            .build()
+        focusRequest = req
+        audioManager.requestAudioFocus(req)
+    }
+
+    private fun abandonAudioFocus() {
+        focusRequest?.let {
+            audioManager.abandonAudioFocusRequest(it)
         }
     }
 
@@ -79,16 +123,12 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                     val latestPost = posts.last()
 
                     if (ch.lastPostText.isEmpty()) {
-                        // Первый запуск/добавление канала: запоминаем текст текущего последнего сообщения,
-                        // но НЕ озвучиваем старые сообщения. Ждем только новые посты.
                         ch.lastPostText = latestPost.text
                         updated = true
                     } else if (latestPost.text != ch.lastPostText) {
-                        // Появилось новое сообщение, текст которого отличается от старого сохраненного
                         ch.lastPostText = latestPost.text
                         updated = true
 
-                        // Получаем текущее время на смартфоне
                         val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                         val channelName = latestPost.channelName.ifBlank { ch.url }
 
@@ -107,7 +147,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private fun speakText(text: String) {
         if (!isTtsReady || text.isBlank()) return
 
-        // Динамически определяем язык конкретного поста
         val targetLocale = when {
             text.contains(Regex("[іїєґІЇЄҐ]")) -> Locale.forLanguageTag("uk")
             text.contains(Regex("[ыэъёЫЭЪЁ]")) -> Locale.forLanguageTag("ru")
@@ -120,7 +159,8 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             tts?.setLanguage(Locale.getDefault())
         }
 
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, System.currentTimeMillis().toString())
+        val utteranceId = System.currentTimeMillis().toString()
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
     override fun onInit(status: Int) {
@@ -132,7 +172,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                 isTtsReady = true
                 Log.d("TtsService", "TTS готов к работе")
             } else {
-                // Если дефолтный язык не завелся, делаем фоллбэк на русскую локаль
                 val fallbackResult = tts?.setLanguage(Locale.forLanguageTag("ru"))
                 if (fallbackResult != TextToSpeech.LANG_MISSING_DATA && fallbackResult != TextToSpeech.LANG_NOT_SUPPORTED) {
                     isTtsReady = true
