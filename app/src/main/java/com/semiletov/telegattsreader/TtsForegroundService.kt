@@ -31,7 +31,13 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
     override fun onCreate() {
         super.onCreate()
-        tts = TextToSpeech(this, this)
+        tts = TextToSpeech(this, this).apply {
+            val audioAttributes = android.media.AudioAttributes.Builder()
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .build()
+            setAudioAttributes(audioAttributes)
+        }
         createNotificationChannel()
 
         val notification = createNotification("Служба чтения Telegram запущена")
