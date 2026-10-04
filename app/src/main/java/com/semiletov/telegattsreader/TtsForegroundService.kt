@@ -42,7 +42,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         tts = TextToSpeech(this, this).apply {
             val attr = AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
                 .build()
             setAudioAttributes(attr)
 
@@ -80,7 +80,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -159,11 +159,8 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             tts?.setLanguage(Locale.getDefault())
         }
 
-        val params = android.os.Bundle().apply {
-            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
-        }
         val utteranceId = System.currentTimeMillis().toString()
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, params, utteranceId)
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 
     override fun onInit(status: Int) {
