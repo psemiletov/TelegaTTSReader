@@ -56,6 +56,21 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
     val channels = remember { mutableStateListOf<Channel>().apply { addAll(ChannelStorage.loadChannels(context)) } }
     var newUrl by remember { mutableStateOf("") }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                val loaded = ChannelStorage.loadChannels(context)
+                channels.clear()
+                channels.addAll(loaded)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text("Telega TTS Reader") }) }
     ) { padding ->
