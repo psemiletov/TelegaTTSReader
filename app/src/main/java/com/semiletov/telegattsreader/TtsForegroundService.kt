@@ -70,20 +70,34 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             if (ch.isEnabled) {
                 val posts = TelegramParser.getLatestPosts(ch.url)
                 if (posts.isNotEmpty()) {
-                    val latestPost = posts.last()
-
-                    if (ch.lastPostText.isEmpty()) {
-                        ch.lastPostText = latestPost.text
+                    if (ch.lastPostId.isEmpty() && ch.lastPostText.isEmpty()) {
+                        // Первый запуск/добавление канала: запоминаем последний пост как точку отсчета,
+                        // но НЕ озвучиваем старые сообщения.
+                        ch.lastPostId = posts.last().id
+                        ch.lastPostText = posts.last().text
                         updated = true
-                    } else if (latestPost.text != ch.lastPostText) {
-                        ch.lastPostText = latestPost.text
-                        updated = true
+                    } else {
+                        // Используем числовое сравнение ID, чтобы не пропустить ни одного сообщения,
+                        // даже если за 1 минуту пришло сразу несколько новых постов.
+                        val lastIdNum = ch.lastPostId.toLongOrNull() ?: 0L
+                        val newPosts = posts.filter { post ->
+                            val postIdNum = post.id.toLongOrNull() ?: 0L
+                            postIdNum > lastIdNum
+                        }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
-                        val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                        val channelName = latestPost.channelName.ifBlank { ch.url }
+                        for (p in newPosts) {
+                            val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            val channelName = p.channelName.ifBlank { ch.url }
 
-                        val textToRead = "Канал $channelName, в $currentTime. ${latestPost.text}"
-                        speakText(textToRead)
+                            val textToRead = "Канал $channelName, в $currentTime. ${p.text}"
+                            speakText(textToRead)
+                        }
+
+                        if (newPosts.isNotEmpty()) {
+                            ch.lastPostId = newPosts.last().id
+                            ch.lastPostText = newPosts.last().text
+                            updated = true
+                        }
                     }
                 }
             }
