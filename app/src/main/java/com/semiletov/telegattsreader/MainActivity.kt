@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
+import com.semiletov.telegattsreader.ui.theme.TelegaTTSReaderTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -21,7 +22,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         startTtsService()
         setContent {
-            MaterialTheme {
+            TelegaTTSReaderTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
