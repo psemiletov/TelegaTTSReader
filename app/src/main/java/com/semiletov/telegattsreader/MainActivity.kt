@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 
 class MainActivity : ComponentActivity() {
@@ -47,6 +48,19 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, TtsForegroundService::class.java)
         stopService(intent)
     }
+}
+
+fun formatChannelUrl(input: String): String {
+    val trimmed = input.trim()
+    if (trimmed.isEmpty()) return ""
+    if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        return trimmed
+    }
+    if (trimmed.startsWith("t.me/") || trimmed.startsWith("tg.me/")) {
+        return "https://$trimmed"
+    }
+    val clean = trimmed.removePrefix("@")
+    return "https://tg.me/$clean"
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,12 +102,20 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                     value = newUrl,
                     onValueChange = { newUrl = it },
                     label = { Text("URL или @имя_канала") },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .onFocusChanged { focusState ->
+                            if (!focusState.isFocused) {
+                                newUrl = formatChannelUrl(newUrl)
+                            }
+                        },
+                    singleLine = true
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(onClick = {
-                    if (newUrl.isNotBlank()) {
-                        val ch = Channel(url = newUrl.trim())
+                    val formatted = formatChannelUrl(newUrl)
+                    if (formatted.isNotBlank()) {
+                        val ch = Channel(url = formatted)
                         channels.add(ch)
                         ChannelStorage.saveChannels(context, channels)
                         newUrl = ""
@@ -131,8 +153,8 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                             channel.isEnabled = isChecked
                             ChannelStorage.saveChannels(context, channels)
                         },
-                        onUrlChanged = { newUrl ->
-                            channel.url = newUrl.trim()
+                        onUrlChanged = { updatedUrl ->
+                            channel.url = updatedUrl.trim()
                             channel.lastPostId = ""
                             channel.lastPostText = ""
                             ChannelStorage.saveChannels(context, channels)
@@ -175,7 +197,17 @@ fun ChannelItem(
                     onUrlChanged(it)
                 },
                 label = { Text("URL канала") },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { focusState ->
+                        if (!focusState.isFocused) {
+                            val formatted = formatChannelUrl(urlText)
+                            if (formatted != urlText) {
+                                urlText = formatted
+                                onUrlChanged(formatted)
+                            }
+                        }
+                    },
                 singleLine = true
             )
             Spacer(modifier = Modifier.height(8.dp))
