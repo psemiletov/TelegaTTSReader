@@ -116,6 +116,12 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                             channel.isEnabled = isChecked
                             ChannelStorage.saveChannels(context, channels)
                         },
+                        onUrlChanged = { newUrl ->
+                            channel.url = newUrl.trim()
+                            channel.lastPostId = ""
+                            channel.lastPostText = ""
+                            ChannelStorage.saveChannels(context, channels)
+                        },
                         onDelete = {
                             channels.remove(channel)
                             ChannelStorage.saveChannels(context, channels)
@@ -128,39 +134,58 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
 }
 
 @Composable
-fun ChannelItem(channel: Channel, onToggle: (Boolean) -> Unit, onDelete: () -> Unit) {
+fun ChannelItem(
+    channel: Channel,
+    onToggle: (Boolean) -> Unit,
+    onUrlChanged: (String) -> Unit,
+    onDelete: () -> Unit
+) {
     var checked by remember { mutableStateOf(channel.isEnabled) }
+    var urlText by remember(channel.id) { mutableStateOf(channel.url) }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .padding(12.dp)
-                .fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .fillMaxWidth()
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(text = channel.url, style = MaterialTheme.typography.bodyLarge)
-                if (channel.lastPostId.isNotEmpty()) {
-                    Text(
-                        text = "Последний ID: ${channel.lastPostId}",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-            Switch(
-                checked = checked,
-                onCheckedChange = {
-                    checked = it
-                    onToggle(it)
-                }
+            OutlinedTextField(
+                value = urlText,
+                onValueChange = {
+                    urlText = it
+                    onUrlChanged(it)
+                },
+                label = { Text("URL канала") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
-            IconButton(onClick = onDelete) {
-                Text("❌")
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = if (channel.lastPostText.isNotEmpty()) "Активен" else "Ожидание...",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = checked,
+                        onCheckedChange = {
+                            checked = it
+                            onToggle(it)
+                        }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(onClick = onDelete) {
+                        Text("❌")
+                    }
+                }
             }
         }
     }
