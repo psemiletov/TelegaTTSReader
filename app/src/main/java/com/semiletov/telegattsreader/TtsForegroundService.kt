@@ -159,8 +159,11 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             tts?.setLanguage(Locale.getDefault())
         }
 
+        val params = android.os.Bundle().apply {
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+        }
         val utteranceId = System.currentTimeMillis().toString()
-        tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+        tts?.speak(text, TextToSpeech.QUEUE_ADD, params, utteranceId)
     }
 
     override fun onInit(status: Int) {
