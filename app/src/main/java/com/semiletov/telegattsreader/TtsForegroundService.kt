@@ -4,16 +4,11 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -34,33 +29,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private var searchJob: Job? = null
 
-    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
-    private var focusRequest: AudioFocusRequest? = null
-
     override fun onCreate() {
         super.onCreate()
-        tts = TextToSpeech(this, this).apply {
-            val attr = AudioAttributes.Builder()
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .build()
-            setAudioAttributes(attr)
-
-            setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    requestAudioFocus()
-                }
-
-                override fun onDone(utteranceId: String?) {
-                    abandonAudioFocus()
-                }
-
-                @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) {
-                    abandonAudioFocus()
-                }
-            })
-        }
+        tts = TextToSpeech(this, this)
         createNotificationChannel()
 
         val notification = createNotification("Служба чтения Telegram запущена")
@@ -73,27 +44,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             )
         } else {
             startForeground(1, notification)
-        }
-    }
-
-    private fun requestAudioFocus() {
-        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAcceptsDelayedFocusGain(false)
-            .setOnAudioFocusChangeListener {}
-            .build()
-        focusRequest = req
-        audioManager.requestAudioFocus(req)
-    }
-
-    private fun abandonAudioFocus() {
-        focusRequest?.let {
-            audioManager.abandonAudioFocusRequest(it)
         }
     }
 
