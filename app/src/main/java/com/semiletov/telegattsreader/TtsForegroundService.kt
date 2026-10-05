@@ -97,7 +97,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                             val channelName = p.channelName.ifBlank { ch.url }
 
                             val textToRead = "Канал $channelName, в $currentTime. ${p.text}"
-                            speakText(textToRead)
+                            speakText(textToRead, p.id)
                         }
 
                         if (newPosts.isNotEmpty()) {
@@ -120,7 +120,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun speakText(text: String) {
+    private fun speakText(text: String, postId: String = "") {
         if (!isTtsReady || text.isBlank()) return
 
         val targetLocale = when {
@@ -135,7 +135,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             tts?.setLanguage(Locale.getDefault())
         }
 
-        val utteranceId = System.currentTimeMillis().toString()
+        val utteranceId = "msg_${postId}_${System.nanoTime()}"
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
 

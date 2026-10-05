@@ -27,6 +27,8 @@ object TelegramParser {
             val targetUrl = "https://t.me/s/$cleanUrl"
             val doc: Document = Jsoup.connect(targetUrl)
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .header("Cache-Control", "no-cache")
+                .header("Pragma", "no-cache")
                 .timeout(10000)
                 .get()
 
