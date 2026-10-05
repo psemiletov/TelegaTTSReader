@@ -18,7 +18,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -93,10 +92,10 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
                         for (p in newPosts) {
-                            val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            val timePart = if (p.time.isNotBlank()) " в ${p.time}" else ""
                             val channelName = p.channelName.ifBlank { ch.url }
 
-                            val textToRead = "Канал $channelName, в $currentTime. ${p.text}"
+                            val textToRead = "Канал $channelName$timePart. ${p.text}"
                             speakText(textToRead, p.id)
                         }
 
