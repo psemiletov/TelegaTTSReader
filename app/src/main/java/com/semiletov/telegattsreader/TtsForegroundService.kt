@@ -29,6 +29,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private var searchJob: Job? = null
 
+    // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
+    private var isFirstCheckAfterStart = true
+
     override fun onCreate() {
         super.onCreate()
         tts = TextToSpeech(this, this)
@@ -70,15 +73,19 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             if (ch.isEnabled) {
                 val posts = TelegramParser.getLatestPosts(ch.url)
                 if (posts.isNotEmpty()) {
-                    if (ch.lastPostId.isEmpty() && ch.lastPostText.isEmpty()) {
-                        // Первый запуск/добавление канала: запоминаем последний пост как точку отсчета,
-                        // но НЕ озвучиваем старые сообщения.
-                        ch.lastPostId = posts.last().id
-                        ch.lastPostText = posts.last().text
+                    val latestPost = posts.last()
+
+                    if (isFirstCheckAfterStart) {
+                        // При запуске службы после перерыва полностью игнорируем всю накопившуюся историю.
+                        // Устанавливаем текущий свежий пост как отправную точку, не озвучивая старые.
+                        ch.lastPostId = latestPost.id
+                        ch.lastPostText = latestPost.text
+                        updated = true
+                    } else if (ch.lastPostId.isEmpty() && ch.lastPostText.isEmpty()) {
+                        ch.lastPostId = latestPost.id
+                        ch.lastPostText = latestPost.text
                         updated = true
                     } else {
-                        // Используем числовое сравнение ID, чтобы не пропустить ни одного сообщения,
-                        // даже если за 1 минуту пришло сразу несколько новых постов.
                         val lastIdNum = ch.lastPostId.toLongOrNull() ?: 0L
                         val newPosts = posts.filter { post ->
                             val postIdNum = post.id.toLongOrNull() ?: 0L
@@ -101,6 +108,11 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                     }
                 }
             }
+        }
+
+        if (isFirstCheckAfterStart) {
+            isFirstCheckAfterStart = false
+            updated = true
         }
 
         if (updated) {
