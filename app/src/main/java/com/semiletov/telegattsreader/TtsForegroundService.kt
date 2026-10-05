@@ -15,6 +15,7 @@ import android.os.IBinder
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +37,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
 
+    // Флаг: играла ли музыка ДО того, как наше приложение решило озвучить сообщение
+    private var wasMusicPlayingBefore = false
+
     // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
     private var isFirstCheckAfterStart = true
 
@@ -50,16 +54,16 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
             setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
-                    requestAudioFocus()
+                    requestAudioFocusAndPauseMedia()
                 }
 
                 override fun onDone(utteranceId: String?) {
-                    abandonAudioFocus()
+                    abandonAudioFocusAndResumeMedia()
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    abandonAudioFocus()
+                    abandonAudioFocusAndResumeMedia()
                 }
             })
         }
@@ -78,7 +82,15 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun requestAudioFocus() {
+    private fun requestAudioFocusAndPauseMedia() {
+        // Проверяем, играет ли в данный момент какая-либо музыка (AIMP, VLC, Spotify и т.д.)
+        wasMusicPlayingBefore = audioManager.isMusicActive
+
+        if (wasMusicPlayingBefore) {
+            // Если музыка играла, принудительно отправляем системную команду паузы
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
+        }
+
         val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -93,9 +105,26 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         audioManager.requestAudioFocus(req)
     }
 
-    private fun abandonAudioFocus() {
+    private fun abandonAudioFocusAndResumeMedia() {
         focusRequest?.let {
             audioManager.abandonAudioFocusRequest(it)
+        }
+
+        // Если до начала озвучки музыка действительно играла, возобновляем воспроизведение
+        if (wasMusicPlayingBefore) {
+            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
+            wasMusicPlayingBefore = false
+        }
+    }
+
+    private fun sendMediaKey(keyCode: Int) {
+        try {
+            val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, keyCode)
+            audioManager.dispatchMediaKeyEvent(downEvent)
+            val upEvent = KeyEvent(KeyEvent.ACTION_UP, keyCode)
+            audioManager.dispatchMediaKeyEvent(upEvent)
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -122,17 +151,15 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             if (ch.isEnabled) {
                 val posts = TelegramParser.getLatestPosts(ch.url)
                 if (posts.isNotEmpty()) {
-                    val latestPost = posts.last()
-
                     if (isFirstCheckAfterStart) {
                         // При запуске службы после перерыва полностью игнорируем всю накопившуюся историю.
                         // Устанавливаем текущий свежий пост как отправную точку, не озвучивая старые.
-                        ch.lastPostId = latestPost.id
-                        ch.lastPostText = latestPost.text
+                        ch.lastPostId = posts.last().id
+                        ch.lastPostText = posts.last().text
                         updated = true
                     } else if (ch.lastPostId.isEmpty() && ch.lastPostText.isEmpty()) {
-                        ch.lastPostId = latestPost.id
-                        ch.lastPostText = latestPost.text
+                        ch.lastPostId = posts.last().id
+                        ch.lastPostText = posts.last().text
                         updated = true
                     } else {
                         val lastIdNum = ch.lastPostId.toLongOrNull() ?: 0L
