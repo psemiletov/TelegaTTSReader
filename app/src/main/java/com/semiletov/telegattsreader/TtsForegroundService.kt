@@ -168,11 +168,19 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                             postIdNum > lastIdNum
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
+                        val prefs = applicationContext.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                        val speakChannel = prefs.getBoolean("speak_channel_name", true)
+
                         for (p in newPosts) {
-                            val timePart = if (p.time.isNotBlank()) " в ${p.time}" else ""
+                            val timeValue = p.time.trim()
                             val channelName = p.channelName.ifBlank { ch.url }
 
-                            val textToRead = "Канал $channelName$timePart. ${p.text}"
+                            val textToRead = when {
+                                speakChannel && timeValue.isNotEmpty() -> "Канал $channelName, в $timeValue. ${p.text}"
+                                speakChannel && timeValue.isEmpty() -> "Канал $channelName. ${p.text}"
+                                !speakChannel && timeValue.isNotEmpty() -> "В $timeValue. ${p.text}"
+                                else -> p.text
+                            }
                             speakText(textToRead, p.id)
                         }
 

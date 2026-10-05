@@ -1,5 +1,6 @@
 package com.semiletov.telegattsreader
 
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -138,6 +139,35 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                 OutlinedButton(onClick = onStopService) {
                     Text("Остановить")
                 }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            var speakChannelName by remember {
+                mutableStateOf(
+                    context.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                        .getBoolean("speak_channel_name", true)
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Произносить название канала", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = speakChannelName,
+                    onCheckedChange = { checked ->
+                        speakChannelName = checked
+                        context.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("speak_channel_name", checked)
+                            .apply()
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
