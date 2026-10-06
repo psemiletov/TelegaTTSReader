@@ -4,6 +4,7 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
@@ -22,6 +23,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -145,11 +147,20 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                             isNewId && isNotOldHistory
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
+                        val prefs = applicationContext.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                        val speakChannel = prefs.getBoolean("speak_channel_name", true)
+                        val speakTime = prefs.getBoolean("speak_time", true)
+
                         for (p in newPosts) {
-                            val timePart = if (p.time.isNotBlank()) " в ${p.time}" else ""
+                            val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
                             val channelName = p.channelName.ifBlank { ch.url }
 
-                            val textToRead = "Канал $channelName$timePart. ${p.text}"
+                            val textToRead = when {
+                                speakChannel && speakTime -> "Канал $channelName, в $currentTime. ${p.text}"
+                                speakChannel && !speakTime -> "Канал $channelName. ${p.text}"
+                                !speakChannel && speakTime -> "В $currentTime. ${p.text}"
+                                else -> p.text
+                            }
                             speakText(textToRead, p.id)
                         }
 

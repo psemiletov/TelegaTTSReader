@@ -170,6 +170,33 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                 )
             }
 
+            var speakTime by remember {
+                mutableStateOf(
+                    context.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                        .getBoolean("speak_time", true)
+                )
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Говорить время", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = speakTime,
+                    onCheckedChange = { checked ->
+                        speakTime = checked
+                        context.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("speak_time", checked)
+                            .apply()
+                    }
+                )
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             LazyColumn(
