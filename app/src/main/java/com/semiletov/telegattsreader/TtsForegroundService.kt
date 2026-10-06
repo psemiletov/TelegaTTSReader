@@ -4,7 +4,6 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
@@ -15,7 +14,6 @@ import android.os.IBinder
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
-import android.view.KeyEvent
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,11 +32,8 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
     private var searchJob: Job? = null
 
-    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as AudioManager }
+    private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
-
-    // Флаг: играла ли музыка ДО того, как наше приложение решило озвучить сообщение
-    private var wasMusicPlayingBefore = false
 
     // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
     private var isFirstCheckAfterStart = true
@@ -54,16 +49,16 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
             setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
-                    requestAudioFocusAndPauseMedia()
+                    requestAudioFocus()
                 }
 
                 override fun onDone(utteranceId: String?) {
-                    abandonAudioFocusAndResumeMedia()
+                    abandonAudioFocus()
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    abandonAudioFocusAndResumeMedia()
+                    abandonAudioFocus()
                 }
             })
         }
@@ -82,15 +77,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun requestAudioFocusAndPauseMedia() {
-        // Проверяем, играет ли в данный момент какая-либо музыка (AIMP, VLC, Spotify и т.д.)
-        wasMusicPlayingBefore = audioManager.isMusicActive
-
-        if (wasMusicPlayingBefore) {
-            // Если музыка играла, принудительно отправляем системную команду паузы
-            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PAUSE)
-        }
-
+    private fun requestAudioFocus() {
         val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -105,26 +92,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         audioManager.requestAudioFocus(req)
     }
 
-    private fun abandonAudioFocusAndResumeMedia() {
+    private fun abandonAudioFocus() {
         focusRequest?.let {
             audioManager.abandonAudioFocusRequest(it)
-        }
-
-        // Если до начала озвучки музыка действительно играла, возобновляем воспроизведение
-        if (wasMusicPlayingBefore) {
-            sendMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY)
-            wasMusicPlayingBefore = false
-        }
-    }
-
-    private fun sendMediaKey(keyCode: Int) {
-        try {
-            val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, keyCode)
-            audioManager.dispatchMediaKeyEvent(downEvent)
-            val upEvent = KeyEvent(KeyEvent.ACTION_UP, keyCode)
-            audioManager.dispatchMediaKeyEvent(upEvent)
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -168,19 +138,11 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                             postIdNum > lastIdNum
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
-                        val prefs = applicationContext.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
-                        val speakChannel = prefs.getBoolean("speak_channel_name", true)
-
                         for (p in newPosts) {
-                            val timeValue = p.time.trim()
+                            val timePart = if (p.time.isNotBlank()) " в ${p.time}" else ""
                             val channelName = p.channelName.ifBlank { ch.url }
 
-                            val textToRead = when {
-                                speakChannel && timeValue.isNotEmpty() -> "Канал $channelName, в $timeValue. ${p.text}"
-                                speakChannel && timeValue.isEmpty() -> "Канал $channelName. ${p.text}"
-                                !speakChannel && timeValue.isNotEmpty() -> "В $timeValue. ${p.text}"
-                                else -> p.text
-                            }
+                            val textToRead = "Канал $channelName$timePart. ${p.text}"
                             speakText(textToRead, p.id)
                         }
 
