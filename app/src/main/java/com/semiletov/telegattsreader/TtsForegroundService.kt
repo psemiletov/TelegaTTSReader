@@ -121,15 +121,17 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             if (ch.isEnabled) {
                 val posts = TelegramParser.getLatestPosts(ch.url)
                 if (posts.isNotEmpty()) {
+                    val latestPost = posts.maxByOrNull { it.id.toLongOrNull() ?: 0L } ?: posts.last()
+
                     if (isFirstCheckAfterStart) {
                         // При запуске службы после перерыва полностью игнорируем всю накопившуюся историю.
-                        // Устанавливаем текущий свежий пост как отправную точку, не озвучивая старые.
-                        ch.lastPostId = posts.last().id
-                        ch.lastPostText = posts.last().text
+                        // Устанавливаем самый свежий пост как отправную точку, не озвучивая старые.
+                        ch.lastPostId = latestPost.id
+                        ch.lastPostText = latestPost.text
                         updated = true
                     } else if (ch.lastPostId.isEmpty() && ch.lastPostText.isEmpty()) {
-                        ch.lastPostId = posts.last().id
-                        ch.lastPostText = posts.last().text
+                        ch.lastPostId = latestPost.id
+                        ch.lastPostText = latestPost.text
                         updated = true
                     } else {
                         val lastIdNum = ch.lastPostId.toLongOrNull() ?: 0L
@@ -147,8 +149,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                         }
 
                         if (newPosts.isNotEmpty()) {
-                            ch.lastPostId = newPosts.last().id
-                            ch.lastPostText = newPosts.last().text
+                            val absoluteLatest = posts.maxByOrNull { it.id.toLongOrNull() ?: 0L } ?: newPosts.last()
+                            ch.lastPostId = absoluteLatest.id
+                            ch.lastPostText = absoluteLatest.text
                             updated = true
                         }
                     }
