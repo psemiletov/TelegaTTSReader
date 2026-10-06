@@ -35,6 +35,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
 
+    // Время запуска службы. Все посты, опубликованные ДО этого момента, считаются офлайн-историей и не читаются.
+    private val serviceStartTime = System.currentTimeMillis()
+
     // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
     private var isFirstCheckAfterStart = true
 
@@ -137,7 +140,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                         val lastIdNum = ch.lastPostId.toLongOrNull() ?: 0L
                         val newPosts = posts.filter { post ->
                             val postIdNum = post.id.toLongOrNull() ?: 0L
-                            postIdNum > lastIdNum
+                            val isNewId = postIdNum > lastIdNum
+                            val isNotOldHistory = post.timestamp == 0L || post.timestamp >= serviceStartTime
+                            isNewId && isNotOldHistory
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
                         for (p in newPosts) {

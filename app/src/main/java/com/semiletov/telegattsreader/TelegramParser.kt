@@ -4,11 +4,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import java.time.Instant
 
 data class TelegramPost(
     val id: String,
     val text: String,
     val time: String = "",
+    val timestamp: Long = 0L,
     val channelName: String = ""
 )
 
@@ -17,14 +19,14 @@ object TelegramParser {
     suspend fun getLatestPosts(channelUrl: String): List<TelegramPost> = withContext(Dispatchers.IO) {
         val posts = mutableListOf<TelegramPost>()
         try {
-            // Формируем URL формата https://t.me/s/channel_name для веб-просмотра
+            // Формируем URL формата https://t.me/s/channel_name для веб-просмотра с cache-busting параметром
             val cleanUrl = channelUrl.trim()
                 .replace("https://t.me/", "")
                 .replace("t.me/", "")
                 .replace("@", "")
                 .replace("s/", "")
 
-            val targetUrl = "https://t.me/s/$cleanUrl"
+            val targetUrl = "https://t.me/s/$cleanUrl?_=${System.currentTimeMillis()}"
             val doc: Document = Jsoup.connect(targetUrl)
                 .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
                 .header("Cache-Control", "no-cache")
@@ -46,11 +48,29 @@ object TelegramParser {
                 val text = textElement?.text() ?: ""
 
                 val timeElement = element.selectFirst(".tgme_widget_message_date time")
-                    ?: element.selectFirst(".tgme_widget_message_date")
-                val time = timeElement?.text() ?: ""
+                val datetimeAttr = timeElement?.attr("datetime") ?: ""
+                val displayTime = timeElement?.text() ?: ""
+
+                val timestamp = if (datetimeAttr.isNotEmpty()) {
+                    try {
+                        Instant.parse(datetimeAttr).toEpochMilli()
+                    } catch (e: Exception) {
+                        0L
+                    }
+                } else {
+                    0L
+                }
 
                 if (postId.isNotEmpty() && text.isNotEmpty()) {
-                    posts.add(TelegramPost(id = postId, text = text, time = time, channelName = channelTitle))
+                    posts.add(
+                        TelegramPost(
+                            id = postId,
+                            text = text,
+                            time = displayTime,
+                            timestamp = timestamp,
+                            channelName = channelTitle
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
