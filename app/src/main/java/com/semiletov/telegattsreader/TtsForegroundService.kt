@@ -141,7 +141,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                         val newPosts = posts.filter { post ->
                             val postIdNum = post.id.toLongOrNull() ?: 0L
                             val isNewId = postIdNum > lastIdNum
-                            val isNotOldHistory = post.timestamp == 0L || post.timestamp >= serviceStartTime
+                            val isNotOldHistory = post.timestamp > 0L && post.timestamp >= serviceStartTime
                             isNewId && isNotOldHistory
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
