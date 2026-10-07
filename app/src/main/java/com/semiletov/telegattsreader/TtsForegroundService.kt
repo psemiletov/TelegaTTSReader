@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
@@ -36,6 +37,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
+
+    // Счетчик активных сообщений в очереди для непрерывного удержания аудиофокуса
+    private val activeUtterances = AtomicInteger(0)
 
     // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
     private var isFirstCheckAfterStart = true
@@ -51,16 +55,16 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
             setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
-                    requestAudioFocus()
+                    requestAudioFocusIfNeeded()
                 }
 
                 override fun onDone(utteranceId: String?) {
-                    abandonAudioFocus()
+                    abandonAudioFocusIfDone()
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    abandonAudioFocus()
+                    abandonAudioFocusIfDone()
                 }
             })
         }
@@ -79,24 +83,31 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun requestAudioFocus() {
-        val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAcceptsDelayedFocusGain(false)
-            .setOnAudioFocusChangeListener {}
-            .build()
-        focusRequest = req
-        audioManager.requestAudioFocus(req)
+    private fun requestAudioFocusIfNeeded() {
+        if (activeUtterances.incrementAndGet() == 1) {
+            // Первый запуск в серии — запрашиваем фокус один раз
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener {}
+                .build()
+            focusRequest = req
+            audioManager.requestAudioFocus(req)
+        }
     }
 
-    private fun abandonAudioFocus() {
-        focusRequest?.let {
-            audioManager.abandonAudioFocusRequest(it)
+    private fun abandonAudioFocusIfDone() {
+        if (activeUtterances.decrementAndGet() <= 0) {
+            activeUtterances.set(0)
+            // Последнее сообщение договорило — отпускаем фокус
+            focusRequest?.let {
+                audioManager.abandonAudioFocusRequest(it)
+            }
         }
     }
 
