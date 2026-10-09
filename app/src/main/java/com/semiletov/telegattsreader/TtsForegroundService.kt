@@ -1,8 +1,10 @@
 package com.semiletov.telegattsreader
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -20,8 +22,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -33,7 +33,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
-    private var searchJob: Job? = null
 
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
@@ -112,17 +111,29 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startLoop()
+        serviceScope.launch {
+            checkAndReadChannels()
+            scheduleNextCheck()
+        }
         return START_STICKY
     }
 
-    private fun startLoop() {
-        searchJob?.cancel()
-        searchJob = serviceScope.launch {
-            while (isActive) {
-                checkAndReadChannels()
-                delay(60000L)
+    private fun scheduleNextCheck() {
+        try {
+            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, TtsForegroundService::class.java)
+            val pendingIntent = PendingIntent.getService(
+                this, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val triggerTime = System.currentTimeMillis() + 60000L
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
             }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -153,28 +164,37 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                             postIdNum > lastIdNum
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
-                        val prefs = applicationContext.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
-                        val speakChannel = prefs.getBoolean("speak_channel_name", true)
-                        val speakTime = prefs.getBoolean("speak_time", true)
-
-                        for (p in newPosts) {
-                            val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                            val channelName = p.channelName.ifBlank { ch.url }
-
-                            val textToRead = when {
-                                speakChannel && speakTime -> "Канал $channelName, в $currentTime. ${p.text}"
-                                speakChannel && !speakTime -> "Канал $channelName. ${p.text}"
-                                !speakChannel && speakTime -> "В $currentTime. ${p.text}"
-                                else -> p.text
-                            }
-                            speakText(textToRead, p.id)
-                        }
-
-                        if (newPosts.isNotEmpty()) {
+                        if (newPosts.size > 3) {
+                            // Защита (Идея Б): если накопилось больше 3 постов (например, после долгого сна устройства),
+                            // считаем это «историей» и сбрасываем указатель без озвучивания.
                             val absoluteLatest = posts.maxByOrNull { it.id.toLongOrNull() ?: 0L } ?: newPosts.last()
                             ch.lastPostId = absoluteLatest.id
                             ch.lastPostText = absoluteLatest.text
                             updated = true
+                        } else {
+                            val prefs = applicationContext.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                            val speakChannel = prefs.getBoolean("speak_channel_name", true)
+                            val speakTime = prefs.getBoolean("speak_time", true)
+
+                            for (p in newPosts) {
+                                val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                                val channelName = p.channelName.ifBlank { ch.url }
+
+                                val textToRead = when {
+                                    speakChannel && speakTime -> "Канал $channelName, в $currentTime. ${p.text}"
+                                    speakChannel && !speakTime -> "Канал $channelName. ${p.text}"
+                                    !speakChannel && speakTime -> "В $currentTime. ${p.text}"
+                                    else -> p.text
+                                }
+                                speakText(textToRead, p.id)
+                            }
+
+                            if (newPosts.isNotEmpty()) {
+                                val absoluteLatest = posts.maxByOrNull { it.id.toLongOrNull() ?: 0L } ?: newPosts.last()
+                                ch.lastPostId = absoluteLatest.id
+                                ch.lastPostText = absoluteLatest.text
+                                updated = true
+                            }
                         }
                     }
                 }
@@ -250,7 +270,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
-        searchJob?.cancel()
         serviceScope.cancel()
         tts?.stop()
         tts?.shutdown()
