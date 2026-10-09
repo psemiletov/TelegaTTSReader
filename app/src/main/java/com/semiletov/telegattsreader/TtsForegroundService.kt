@@ -13,6 +13,7 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
+    private var abandonJob: Job? = null
 
     // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
     private var isFirstCheckAfterStart = true
@@ -47,6 +49,21 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .build()
             setAudioAttributes(attr)
+
+            setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    requestAudioFocus()
+                }
+
+                override fun onDone(utteranceId: String?) {
+                    scheduleAbandonAudioFocus()
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    scheduleAbandonAudioFocus()
+                }
+            })
         }
         createNotificationChannel()
 
@@ -60,6 +77,49 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             )
         } else {
             startForeground(1, notification)
+        }
+    }
+
+    private fun requestAudioFocus() {
+        abandonJob?.cancel() // Отменяем отложенный сброс фокуса, если началось следующее сообщение
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                        abandonAudioFocus()
+                    }
+                }
+                .build()
+            focusRequest = req
+            audioManager.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                { _ -> },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            )
+        }
+    }
+
+    private fun scheduleAbandonAudioFocus() {
+        abandonJob?.cancel()
+        abandonJob = serviceScope.launch {
+            delay(500L) // Ждем полсекунды на случай, если в очереди есть следующее сообщение
+            abandonAudioFocus()
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        focusRequest?.let {
+            audioManager.abandonAudioFocusRequest(it)
         }
     }
 
@@ -154,9 +214,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private fun speakText(text: String, postId: String = "") {
         if (!isTtsReady || text.isBlank()) return
 
-        // Запрашиваем аудиофокус перед каждой озвучкой (поставит плеер на паузу)
-        requestAudioFocus()
-
         val targetLocale = when {
             text.contains(Regex("[іїєґІЇЄҐ]")) -> Locale.forLanguageTag("uk")
             text.contains(Regex("[ыэъёЫЭЪЁ]")) -> Locale.forLanguageTag("ru")
@@ -171,40 +228,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
         val utteranceId = "msg_${postId}_${System.nanoTime()}"
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
-    }
-
-    private fun requestAudioFocus() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-                .setAcceptsDelayedFocusGain(false)
-                .setOnAudioFocusChangeListener { focusChange ->
-                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-                        abandonAudioFocus()
-                    }
-                }
-                .build()
-            focusRequest = req
-            audioManager.requestAudioFocus(req)
-        } else {
-            @Suppress("DEPRECATION")
-            audioManager.requestAudioFocus(
-                { _ -> },
-                AudioManager.STREAM_MUSIC,
-                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
-            )
-        }
-    }
-
-    private fun abandonAudioFocus() {
-        focusRequest?.let {
-            audioManager.abandonAudioFocusRequest(it)
-        }
     }
 
     override fun onInit(status: Int) {
