@@ -1,10 +1,8 @@
 package com.semiletov.telegattsreader
 
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -15,30 +13,28 @@ import android.media.AudioManager
 import android.os.Build
 import android.os.IBinder
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicInteger
 
 class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
     private var tts: TextToSpeech? = null
     private var isTtsReady = false
     private val serviceScope = CoroutineScope(Dispatchers.Main + Job())
+    private var searchJob: Job? = null
 
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
-
-    // Счетчик активных сообщений в очереди для непрерывного удержания аудиофокуса
-    private val activeUtterances = AtomicInteger(0)
 
     // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
     private var isFirstCheckAfterStart = true
@@ -51,21 +47,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                 .setUsage(AudioAttributes.USAGE_MEDIA)
                 .build()
             setAudioAttributes(attr)
-
-            setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    requestAudioFocusIfNeeded()
-                }
-
-                override fun onDone(utteranceId: String?) {
-                    abandonAudioFocusIfDone()
-                }
-
-                @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) {
-                    abandonAudioFocusIfDone()
-                }
-            })
         }
         createNotificationChannel()
 
@@ -82,58 +63,18 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
         }
     }
 
-    private fun requestAudioFocusIfNeeded() {
-        if (activeUtterances.incrementAndGet() == 1) {
-            // Первый запуск в серии — запрашиваем фокус один раз
-            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-                .setAcceptsDelayedFocusGain(false)
-                .setOnAudioFocusChangeListener {}
-                .build()
-            focusRequest = req
-            audioManager.requestAudioFocus(req)
-        }
-    }
-
-    private fun abandonAudioFocusIfDone() {
-        if (activeUtterances.decrementAndGet() <= 0) {
-            activeUtterances.set(0)
-            // Последнее сообщение договорило — отпускаем фокус
-            focusRequest?.let {
-                audioManager.abandonAudioFocusRequest(it)
-            }
-        }
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        serviceScope.launch {
-            checkAndReadChannels()
-            scheduleNextCheck()
-        }
+        startLoop()
         return START_STICKY
     }
 
-    private fun scheduleNextCheck() {
-        try {
-            val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-            val intent = Intent(this, TtsForegroundService::class.java)
-            val pendingIntent = PendingIntent.getService(
-                this, 0, intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            val triggerTime = System.currentTimeMillis() + 60000L
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
-            } else {
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerTime, pendingIntent)
+    private fun startLoop() {
+        searchJob?.cancel()
+        searchJob = serviceScope.launch {
+            while (isActive) {
+                checkAndReadChannels()
+                delay(60000L)
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -165,8 +106,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
                         if (newPosts.size > 3) {
-                            // Защита (Идея Б): если накопилось больше 3 постов (например, после долгого сна устройства),
-                            // считаем это «историей» и сбрасываем указатель без озвучивания.
+                            // Защита от зачитывания большой "истории" (если накопилось больше 3 постов)
                             val absoluteLatest = posts.maxByOrNull { it.id.toLongOrNull() ?: 0L } ?: newPosts.last()
                             ch.lastPostId = absoluteLatest.id
                             ch.lastPostText = absoluteLatest.text
@@ -214,6 +154,9 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private fun speakText(text: String, postId: String = "") {
         if (!isTtsReady || text.isBlank()) return
 
+        // Запрашиваем аудиофокус перед каждой озвучкой (поставит плеер на паузу)
+        requestAudioFocus()
+
         val targetLocale = when {
             text.contains(Regex("[іїєґІЇЄҐ]")) -> Locale.forLanguageTag("uk")
             text.contains(Regex("[ыэъёЫЭЪЁ]")) -> Locale.forLanguageTag("ru")
@@ -228,6 +171,40 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
         val utteranceId = "msg_${postId}_${System.nanoTime()}"
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
+    }
+
+    private fun requestAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener { focusChange ->
+                    if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
+                        abandonAudioFocus()
+                    }
+                }
+                .build()
+            focusRequest = req
+            audioManager.requestAudioFocus(req)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(
+                { _ -> },
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            )
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        focusRequest?.let {
+            audioManager.abandonAudioFocusRequest(it)
+        }
     }
 
     override fun onInit(status: Int) {
@@ -270,6 +247,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     }
 
     override fun onDestroy() {
+        searchJob?.cancel()
         serviceScope.cancel()
         tts?.stop()
         tts?.shutdown()
