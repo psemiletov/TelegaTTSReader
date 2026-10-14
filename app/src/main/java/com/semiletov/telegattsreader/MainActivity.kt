@@ -210,8 +210,10 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                         channel = channel,
                         onToggle = { isChecked ->
                             channel.isEnabled = isChecked
-                            channel.lastPostId = ""
-                            channel.lastPostText = ""
+                            if (isChecked) {
+                                channel.lastPostId = ""
+                                channel.lastPostText = ""
+                            }
                             ChannelStorage.saveChannels(context, channels)
                         },
                         onUrlChanged = { updatedUrl ->
