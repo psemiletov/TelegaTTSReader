@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">TelegaTTSReader</string>
+    <string name="title_main">Telega TTS Reader</string>
+    <string name="hint_url">URL або @ім\'я_каналу</string>
+    <string name="btn_add">Додати</string>
+    <string name="btn_start_service">Запустити службу</string>
+    <string name="btn_stop_service">Зупинити</string>
+    <string name="switch_speak_channel">Вимовляти назву каналу</string>
+    <string name="switch_speak_time">Говорити час</string>
+    <string name="status_active">Активний</string>
+    <string name="status_waiting">Очікування…</string>
+    <string name="service_notification_text">Служба читання Telegram запущена</string>
+</resources>

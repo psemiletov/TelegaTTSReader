@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.semiletov.telegattsreader.ui.theme.TelegaTTSReaderTheme
 
@@ -88,7 +89,7 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Telega TTS Reader") }) }
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.title_main)) }) }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -103,7 +104,7 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                 OutlinedTextField(
                     value = newUrl,
                     onValueChange = { newUrl = it },
-                    label = { Text("URL или @имя_канала") },
+                    label = { Text(stringResource(R.string.hint_url)) },
                     modifier = Modifier
                         .weight(1f)
                         .onFocusChanged { focusState ->
@@ -123,7 +124,7 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                         newUrl = ""
                     }
                 }) {
-                    Text("Добавить")
+                    Text(stringResource(R.string.btn_add))
                 }
             }
 
@@ -134,10 +135,10 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Button(onClick = onStartService) {
-                    Text("Запустить службу")
+                    Text(stringResource(R.string.btn_start_service))
                 }
                 OutlinedButton(onClick = onStopService) {
-                    Text("Остановить")
+                    Text(stringResource(R.string.btn_stop_service))
                 }
             }
 
@@ -157,7 +158,7 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Произносить название канала", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.switch_speak_channel), style = MaterialTheme.typography.bodyMedium)
                 Switch(
                     checked = speakChannelName,
                     onCheckedChange = { checked ->
@@ -184,7 +185,7 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Говорить время", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.switch_speak_time), style = MaterialTheme.typography.bodyMedium)
                 Switch(
                     checked = speakTime,
                     onCheckedChange = { checked ->
@@ -209,10 +210,8 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
                         channel = channel,
                         onToggle = { isChecked ->
                             channel.isEnabled = isChecked
-                            if (isChecked) {
-                                channel.lastPostId = ""
-                                channel.lastPostText = ""
-                            }
+                            channel.lastPostId = ""
+                            channel.lastPostText = ""
                             ChannelStorage.saveChannels(context, channels)
                         },
                         onUrlChanged = { updatedUrl ->
@@ -258,7 +257,7 @@ fun ChannelItem(
                     urlText = it
                     onUrlChanged(it)
                 },
-                label = { Text("URL канала") },
+                label = { Text(stringResource(R.string.hint_url)) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged { focusState ->
@@ -279,7 +278,7 @@ fun ChannelItem(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = if (channel.lastPostText.isNotEmpty()) "Активен" else "Ожидание...",
+                    text = if (channel.lastPostText.isNotEmpty()) stringResource(R.string.status_active) else stringResource(R.string.status_waiting),
                     style = MaterialTheme.typography.bodySmall
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
