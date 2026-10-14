@@ -36,7 +36,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
 
     private val audioManager by lazy { getSystemService(AUDIO_SERVICE) as AudioManager }
     private var focusRequest: AudioFocusRequest? = null
-    private var abandonJob: Job? = null
 
     // Флаг для отслеживания первой проверки после запуска службы (игнорируем накопившуюся офлайн-историю)
     private var isFirstCheckAfterStart = true
@@ -56,12 +55,12 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                 }
 
                 override fun onDone(utteranceId: String?) {
-                    scheduleAbandonAudioFocus()
+                    abandonAudioFocus()
                 }
 
                 @Deprecated("Deprecated in Java")
                 override fun onError(utteranceId: String?) {
-                    scheduleAbandonAudioFocus()
+                    abandonAudioFocus()
                 }
             })
         }
@@ -81,7 +80,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun requestAudioFocus() {
-        abandonJob?.cancel() // Отменяем отложенный сброс фокуса, если началось следующее сообщение
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val req = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
                 .setAudioAttributes(
@@ -106,14 +104,6 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                 AudioManager.STREAM_MUSIC,
                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
             )
-        }
-    }
-
-    private fun scheduleAbandonAudioFocus() {
-        abandonJob?.cancel()
-        abandonJob = serviceScope.launch {
-            delay(500L) // Ждем полсекунды на случай, если в очереди есть следующее сообщение
-            abandonAudioFocus()
         }
     }
 
@@ -165,36 +155,28 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
                             postIdNum > lastIdNum
                         }.sortedBy { it.id.toLongOrNull() ?: 0L }
 
-                        if (newPosts.size > 3) {
-                            // Защита от зачитывания большой "истории" (если накопилось больше 3 постов)
+                        val prefs = applicationContext.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
+                        val speakChannel = prefs.getBoolean("speak_channel_name", true)
+                        val speakTime = prefs.getBoolean("speak_time", true)
+
+                        for (p in newPosts) {
+                            val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            val channelName = p.channelName.ifBlank { ch.url }
+
+                            val textToRead = when {
+                                speakChannel && speakTime -> "Канал $channelName, в $currentTime. ${p.text}"
+                                speakChannel && !speakTime -> "Канал $channelName. ${p.text}"
+                                !speakChannel && speakTime -> "В $currentTime. ${p.text}"
+                                else -> p.text
+                            }
+                            speakText(textToRead, p.id)
+                        }
+
+                        if (newPosts.isNotEmpty()) {
                             val absoluteLatest = posts.maxByOrNull { it.id.toLongOrNull() ?: 0L } ?: newPosts.last()
                             ch.lastPostId = absoluteLatest.id
                             ch.lastPostText = absoluteLatest.text
                             updated = true
-                        } else {
-                            val prefs = applicationContext.getSharedPreferences("tg_tts_prefs", Context.MODE_PRIVATE)
-                            val speakChannel = prefs.getBoolean("speak_channel_name", true)
-                            val speakTime = prefs.getBoolean("speak_time", true)
-
-                            for (p in newPosts) {
-                                val currentTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                                val channelName = p.channelName.ifBlank { ch.url }
-
-                                val textToRead = when {
-                                    speakChannel && speakTime -> "Канал $channelName, в $currentTime. ${p.text}"
-                                    speakChannel && !speakTime -> "Канал $channelName. ${p.text}"
-                                    !speakChannel && speakTime -> "В $currentTime. ${p.text}"
-                                    else -> p.text
-                                }
-                                speakText(textToRead, p.id)
-                            }
-
-                            if (newPosts.isNotEmpty()) {
-                                val absoluteLatest = posts.maxByOrNull { it.id.toLongOrNull() ?: 0L } ?: newPosts.last()
-                                ch.lastPostId = absoluteLatest.id
-                                ch.lastPostText = absoluteLatest.text
-                                updated = true
-                            }
                         }
                     }
                 }
@@ -214,6 +196,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
     private fun speakText(text: String, postId: String = "") {
         if (!isTtsReady || text.isBlank()) return
 
+        // Сначала полностью настраиваем движок TTS (язык) для данного сообщения
         val targetLocale = when {
             text.contains(Regex("[іїєґІЇЄҐ]")) -> Locale.forLanguageTag("uk")
             text.contains(Regex("[ыэъёЫЭЪЁ]")) -> Locale.forLanguageTag("ru")
@@ -226,6 +209,7 @@ class TtsForegroundService : Service(), TextToSpeech.OnInitListener {
             tts?.setLanguage(Locale.getDefault())
         }
 
+        // Затем отправляем в очередь озвучки
         val utteranceId = "msg_${postId}_${System.nanoTime()}"
         tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
     }
