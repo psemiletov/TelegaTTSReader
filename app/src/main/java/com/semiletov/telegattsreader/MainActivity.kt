@@ -200,6 +200,29 @@ fun MainScreen(onStartService: () -> Unit, onStopService: () -> Unit) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            val packageInfo = remember {
+                try {
+                    context.packageManager.getPackageInfo(context.packageName, 0)
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            val versionName = packageInfo?.versionName ?: "1.0"
+            val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                packageInfo?.longVersionCode ?: 1L
+            } else {
+                @Suppress("DEPRECATION")
+                packageInfo?.versionCode?.toLong() ?: 1L
+            }
+            Text(
+                text = "v$versionName (build $versionCode)",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(4.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()

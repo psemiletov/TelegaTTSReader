@@ -1,6 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+val propsFile = rootProject.file("gradle.properties")
+val props = Properties().apply {
+    if (propsFile.exists()) load(propsFile.inputStream())
+}
+var versionCodeVal = props.getProperty("VERSION_CODE", "1").toInt()
+if (gradle.startParameter.taskNames.any { it.contains("assemble", true) || it.contains("bundle", true) }) {
+    versionCodeVal++
+    props.setProperty("VERSION_CODE", versionCodeVal.toString())
+    props.store(propsFile.writer(), null)
 }
 
 android {
@@ -13,8 +26,8 @@ android {
         applicationId = "com.semiletov.telegattsreader"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = versionCodeVal
+        versionName = "1.0.$versionCodeVal"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
